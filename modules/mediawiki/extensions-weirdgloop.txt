@@ -1,0 +1,28 @@
+# Weird Gloop forks — https://github.com/orgs/weirdgloop/repositories
+# Format: ExtensionName|git-url|branch
+VariablesLua|https://github.com/Liquipedia/VariablesLua|master
+SimpleBatchUpload|https://github.com/ProfessionalWiki/SimpleBatchUpload|master
+GloopTweaks|https://github.com/weirdgloop/mediawiki-extensions-GloopTweaks|weirdgloop/REL1_45
+GCS|https://github.com/weirdgloop/mediawiki-extensions-GCS|REL1_45
+Tabber|https://github.com/weirdgloop/mediawiki-extensions-Tabber|weirdgloop/REL1_45
+DynamicPageList4|https://github.com/weirdgloop/mediawiki-extensions-DynamicPageList4|master
+Bucket|https://github.com/weirdgloop/mediawiki-extensions-Bucket|main
+RSHiscores|https://github.com/weirdgloop/mediawiki-extensions-RSHiscores|master
+TimedMediaHandler|https://github.com/weirdgloop/mediawiki-extensions-TimedMediaHandler|weirdgloop/REL1_45
+MigrateUserAccount|https://github.com/weirdgloop/mediawiki-extensions-MigrateUserAccount|master
+Scribunto|https://github.com/weirdgloop/mediawiki-extensions-Scribunto|weirdgloop/REL1_45
+VisualEditor|https://github.com/weirdgloop/mediawiki-extensions-VisualEditor|weirdgloop/REL1_45
+Echo|https://github.com/weirdgloop/mediawiki-extensions-Echo|weirdgloop/REL1_45
+AbuseFilter|https://github.com/weirdgloop/mediawiki-extensions-AbuseFilter|weirdgloop/REL1_45
+GlobalUserrights|https://github.com/weirdgloop/mediawiki-extensions-GlobalUserrights|weirdgloop/REL1_45
+MobileFrontend|https://github.com/weirdgloop/mediawiki-extensions-MobileFrontend|weirdgloop/REL1_45
+Popups|https://github.com/weirdgloop/mediawiki-extensions-Popups|weirdgloop/REL1_45
+EmbedVideo|https://github.com/StarCitizenWiki/mediawiki-extensions-EmbedVideo|master
+SearchDigest|https://github.com/weirdgloop/mediawiki-extensions-SearchDigest|master
+Less|https://github.com/weirdgloop/mediawiki-extensions-Less|main
+PageImages|https://github.com/weirdgloop/mediawiki-extensions-PageImages|weirdgloop/REL1_45
+DismissableSiteNotice|https://github.com/weirdgloop/mediawiki-extensions-DismissableSiteNotice|weirdgloop/REL1_45
+TemplateStylesExtender|https://github.com/octfx/mediawiki-extensions-TemplateStylesExtender|master
+Discord|https://github.com/jayktaylor/mw-discord|master
+MessageCachePerformance|https://github.com/weirdgloop/mediawiki-extensions-MessageCachePerformance|weirdgloop/main
+EasyTimeline|https://github.com/wikimedia/mediawiki-extensions-timeline/REL1_45

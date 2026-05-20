@@ -1,0 +1,410 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2025-09-28T19:19:15+02:00",
+    "name": "MediaWiki (Nginx + PHP)",
+    "author": "Mark7625",
+    "description": "MediaWiki + Nginx + PHP with bundled MariaDB on the same server and CLI auto-install.\r\n\r\nDB_STATUS=1 (default): database runs at 127.0.0.1 — do not use your public IP for DB_HOST.\r\nLeave DB credentials empty to auto-generate. Set AUTOUPDATE_STATUS=0.",
+    "features": null,
+    "docker_images": {
+        "mediawiki-pterodactyl-egg:8.5-latest": "mediawiki-pterodactyl-egg:8.5-latest",
+        "mediawiki-pterodactyl-egg:8.4-latest": "mediawiki-pterodactyl-egg:8.4-latest",
+        "mediawiki-pterodactyl-egg:8.3-latest": "mediawiki-pterodactyl-egg:8.3-latest",
+        "mediawiki-pterodactyl-egg:8.2-latest": "mediawiki-pterodactyl-egg:8.2-latest"
+    },
+    "file_denylist": [],
+    "startup": ".\/start-modules.sh",
+    "config": {
+        "files": "{\r\n    \"nginx\/conf.d\/default.conf\": {\r\n        \"parser\": \"file\",\r\n        \"find\": {\r\n            \"    listen\": \"    listen {{server.build.default.port}};\"\r\n        }\r\n    }\r\n}",
+        "startup": "{\r\n    \"done\": \"Services successfully launched\"\r\n}",
+        "logs": "{\r\n    \"location\": \"logs\/latest.log\"\r\n}",
+        "stop": "^C & ^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!\/bin\/bash\r\n\r\n# [SETUP] Install necessary packages, including git\r\necho -e \"[SETUP] Install packages\"\r\napt-get update -qq > \/dev\/null 2>&1 && apt-get install -qq > \/dev\/null 2>&1 -y git wget perl perl-doc fcgiwrap\r\n\r\nEGG_REPO=\"https:\/\/github.com\/Mark7625\/MediaWiki-Pterodactyl-Egg\"\r\n\r\n# Change to server directory\r\ncd \/mnt\/server\r\n\r\n# [SETUP] Create necessary folders\r\necho -e \"[SETUP] Create folders\"\r\nmkdir -p logs tmp www cache mysql\r\n\r\n# Clone the egg repository into a temporary directory\r\necho \"[Git] Cloning egg repository '${EGG_REPO}' into temporary directory.\"\r\ngit clone \"${EGG_REPO}\" \/mnt\/server\/gtemp > \/dev\/null 2>&1 && echo \"[Git] Repository cloned successfully.\" || { echo \"[Git] Error: Egg repository clone failed.\"; exit 21; }\r\n\r\n# Add VERSION file from latest commit\r\ngit -C \/mnt\/server\/gtemp rev-parse --short HEAD > \/mnt\/server\/VERSION 2>\/dev\/null || echo \"unknown\" > \/mnt\/server\/VERSION\r\n\r\n# Copy the www folder and files from the temporary repository to the target directory\r\necho \"[Git] Copying folder and files from default repository.\"\r\ncp -r \/mnt\/server\/gtemp\/nginx \/mnt\/server || { echo \"[Git] Error: Copying 'nginx' folder failed.\"; exit 22; }\r\ncp -r \/mnt\/server\/gtemp\/php \/mnt\/server || { echo \"[Git] Error: Copying 'php' folder failed.\"; exit 22; }\r\ncp -r \/mnt\/server\/gtemp\/modules \/mnt\/server || { echo \"[Git] Error: Copying 'modules' folder failed.\"; exit 22; }\r\ncp \/mnt\/server\/gtemp\/start-modules.sh \/mnt\/server || { echo \"[Git] Error: Copying 'start-modules.sh' file failed.\"; exit 22; }\r\ncp \/mnt\/server\/gtemp\/LICENSE \/mnt\/server || { echo \"[Git] Error: Copying 'LICENSE' file failed.\"; exit 22; }\r\nchmod +x \/mnt\/server\/start-modules.sh\r\nfind \/mnt\/server\/modules -type f -name \"*.sh\" -exec chmod +x {} \\;\r\n\r\nif [[ -f \/mnt\/server\/gtemp\/scripts\/bundle-mariadb.sh ]]; then\r\n    echo \"[SETUP] Bundling MariaDB (same-server database)\"\r\n    bash \/mnt\/server\/gtemp\/scripts\/bundle-mariadb.sh \/mnt\/server\/mariadb-bundle || exit 23\r\n    if [[ ! -x \/mnt\/server\/mariadb-bundle\/sbin\/mariadbd \\\r\n      && ! -x \/mnt\/server\/mariadb-bundle\/bin\/mariadbd \\\r\n      && ! -x \/mnt\/server\/mariadb-bundle\/sbin\/mysqld ]]; then\r\n        echo \"[SETUP] Error: MariaDB bundle incomplete (mariadbd missing).\"; exit 23\r\n    fi\r\n    if [[ ! -x \/mnt\/server\/mariadb-bundle\/bin\/mariadb-install-db ]]; then\r\n        echo \"[SETUP] Error: MariaDB bundle incomplete (mariadb-install-db missing).\"; exit 23\r\n    fi\r\n    echo \"[SETUP] MariaDB bundle OK\"\r\nelse\r\n    echo \"[SETUP] Error: bundle-mariadb.sh missing.\"; exit 23\r\nfi\r\n\r\n# Remove the temporary cloned repository\r\nrm -rf \/mnt\/server\/gtemp\r\n\r\n# Install MediaWiki 1.45.3 into www on first run (empty directory)\r\nMEDIAWIKI_VERSION=\"1.45.3\"\r\nMEDIAWIKI_URL=\"https:\/\/releases.wikimedia.org\/mediawiki\/1.45\/mediawiki-${MEDIAWIKI_VERSION}.tar.gz\"\r\n\r\nif [ ! -d \/mnt\/server\/www ]; then\r\n    mkdir -p \/mnt\/server\/www\r\nfi\r\n\r\nif [ -z \"$(ls -A \/mnt\/server\/www 2>\/dev\/null)\" ]; then\r\n    echo \"[SETUP] Installing MediaWiki ${MEDIAWIKI_VERSION}\"\r\n    cd \/mnt\/server\/www || { echo \"[SETUP] Error: Could not access \/mnt\/server\/www directory.\"; exit 1; }\r\n    wget -q \"${MEDIAWIKI_URL}\" -O mediawiki.tar.gz || { echo \"[SETUP] Error: Downloading MediaWiki failed.\"; exit 16; }\r\n    tar xzf mediawiki.tar.gz --strip-components=1 >\/dev\/null 2>&1 || { echo \"[SETUP] Error: Extracting MediaWiki failed.\"; exit 17; }\r\n    rm -f mediawiki.tar.gz\r\n    echo \"[SETUP] MediaWiki ${MEDIAWIKI_VERSION} installed - visit http:\/\/ip:port\/ to run the web installer\"\r\nelse\r\n    echo \"[SETUP] www directory is not empty; skipping MediaWiki download.\"\r\nfi\r\n\r\necho -e \"[DONE] Everything has been installed successfully\"\r\necho -e \"[INFO] You can now start the nginx web server\"\r\n",
+            "container": "debian:bookworm-slim",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Enable Auto-Update",
+            "description": "Check upstream egg updates (disable when using Mark7625 fork).\r\n\r\n0 = false\r\n1 = true",
+            "env_variable": "AUTOUPDATE_STATUS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Force Auto-Update",
+            "description": "Automatically download and apply updates without confirmation (requires Auto-Update enabled)",
+            "env_variable": "AUTOUPDATE_FORCE",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "PHP Version",
+            "description": "Must match your Docker image tag.\r\nExample: mediawiki-pterodactyl-egg:8.4-latest → enter 8.4",
+            "env_variable": "PHP_VERSION",
+            "default_value": "8.4",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:3",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable LogCleaner Module",
+            "description": "Set to true to run the log cleanup module on container startup, or false to disable it.",
+            "env_variable": "LOGCLEANER_STATUS",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Cloudflare Tunnel",
+            "description": "Set to true to start the Cloudflared tunnel on container startup, or false to skip it.",
+            "env_variable": "CLOUDFLARED_STATUS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Cloudflared Tunnel Token",
+            "description": "The authentication token used to connect to the Cloudflare Tunnel service (typically starts with \"ey...\").",
+            "env_variable": "CLOUDFLARED_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|regex:\/^[A-Za-z0-9_-]+$\/",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Composer Module",
+            "description": "Enable or disable Composer package installation",
+            "env_variable": "COMPOSER_STATUS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Composer Packages",
+            "description": "Space-separated list of Composer packages to install",
+            "env_variable": "COMPOSER_MODULES",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Cron Module",
+            "description": "Enable cron job scheduling for automated tasks like Laravel scheduler",
+            "env_variable": "CRON_STATUS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Cron Config File",
+            "description": "Path to crontab configuration file",
+            "env_variable": "CRON_CONFIG_FILE",
+            "default_value": "\/home\/container\/crontab",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Certbot SSL",
+            "description": "Enable automatic SSL certificate management with Let's Encrypt Certbot\r\n\r\n0 = false (default)\r\n1 = true",
+            "env_variable": "CERTBOT_STATUS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Certbot Email",
+            "description": "Email address for Let's Encrypt certificate notifications and recovery",
+            "env_variable": "CERTBOT_EMAIL",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|email",
+            "field_type": "text"
+        },
+        {
+            "name": "Certbot Domain",
+            "description": "Primary domain name for SSL certificate (e.g., example.com or subdomain.example.com)",
+            "env_variable": "CERTBOT_DOMAIN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|regex:\/^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?(?:\\.[a-zA-Z]{2,})+$\/",
+            "field_type": "text"
+        },
+        {
+            "name": "Certbot Webroot Path",
+            "description": "Document root path for webroot validation mode (only used when Mode = webroot)",
+            "env_variable": "CERTBOT_WEBROOT_PATH",
+            "default_value": "\/home\/container\/www",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Certbot Staging Mode",
+            "description": "Use Let's Encrypt staging server for testing (does not count against rate limits)\r\n\r\n0 = Production (default)\r\n1 = Staging\/Testing",
+            "env_variable": "CERTBOT_STAGING",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Certbot Force Renewal",
+            "description": "Force certificate renewal even if currently valid (useful for testing)\r\n\r\n0 = Only renew when needed (default)\r\n1 = Always force renewal",
+            "env_variable": "CERTBOT_FORCE_RENEWAL",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Auto-Install",
+            "description": "Run MediaWiki CLI install on startup (creates LocalSettings.php).\r\n\r\n0 = false\r\n1 = true",
+            "env_variable": "AUTOINSTALL_STATUS",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Port",
+            "description": "MariaDB port on this server (default 3306). Change only if you need a different port.",
+            "env_variable": "DB_PORT",
+            "default_value": "3306",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|between:1,65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Name",
+            "description": "Leave empty to auto-generate on first start (.mw-secrets).",
+            "env_variable": "DB_NAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Database User",
+            "description": "Leave empty to auto-generate on first start (.mw-secrets).",
+            "env_variable": "DB_USER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Password",
+            "description": "Leave empty to auto-generate on first start (.mw-secrets).",
+            "env_variable": "DB_PASSWORD",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Wiki Site Name",
+            "description": "MediaWiki site name (wiki name).",
+            "env_variable": "MW_SITE_NAME",
+            "default_value": "My Wiki",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Wiki URL",
+            "description": "Full public wiki URL including port, e.g. http:\/\/85.155.180.138:9090 — no trailing slash. Leave blank to use allocation IP\/port.",
+            "env_variable": "MW_SERVER",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Wiki Language",
+            "env_variable": "MW_LANG",
+            "default_value": "en",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:20",
+            "field_type": "text"
+        },
+        {
+            "name": "Wiki Admin Username",
+            "env_variable": "MW_ADMIN_USER",
+            "default_value": "admin",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Wiki Admin Password",
+            "description": "Leave empty to auto-generate (.mw-secrets).",
+            "env_variable": "MW_ADMIN_PASS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "MediaWiki Extensions",
+            "description": "Extra extensions (comma-separated). Bundled lists in modules\/mediawiki\/*.txt are always installed.",
+            "env_variable": "MW_EXTENSIONS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "MediaWiki Skins",
+            "description": "Comma-separated skins (default: MinervaNeue,Vector from bundled list).",
+            "env_variable": "MW_SKINS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Redis",
+            "description": "Use Redis for object cache.\r\n\r\n0 = false\r\n1 = true",
+            "env_variable": "REDIS_STATUS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Redis Host",
+            "env_variable": "REDIS_HOST",
+            "default_value": "127.0.0.1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Redis Port",
+            "env_variable": "REDIS_PORT",
+            "default_value": "6379",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|numeric|between:1024,65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Elasticsearch",
+            "description": "CirrusSearch (needs external Elasticsearch).\r\n\r\n0 = false\r\n1 = true",
+            "env_variable": "ELASTICSEARCH_STATUS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Elasticsearch Host",
+            "env_variable": "ELASTICSEARCH_HOST",
+            "default_value": "127.0.0.1:9200",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Bundled Database",
+            "description": "Run MariaDB in this same server (127.0.0.1). Turn off to use an external database.\r\n\r\n0 = external DB\r\n1 = bundled (default)",
+            "env_variable": "DB_STATUS",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Public",
+            "description": "Expose bundled DB on 0.0.0.0 (not recommended). Wiki still uses 127.0.0.1.\r\n\r\n0 = local only\r\n1 = public",
+            "env_variable": "DB_BIND_PUBLIC",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Database Root Password",
+            "description": "Root password for bundled MariaDB setup. Leave empty to auto-generate.",
+            "env_variable": "DB_ROOT_PASSWORD",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Egg Git Repository",
+            "description": "GitHub repo URL for egg auto-updates (default: Mark7625\/MediaWiki-Pterodactyl-Egg).",
+            "env_variable": "EGG_REPO",
+            "default_value": "https:\/\/github.com\/Mark7625\/MediaWiki-Pterodactyl-Egg",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Egg Git Branch",
+            "description": "Branch to track for auto-updates (default: master).",
+            "env_variable": "EGG_BRANCH",
+            "default_value": "master",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:128",
+            "field_type": "text"
+        }
+    ]
+}
