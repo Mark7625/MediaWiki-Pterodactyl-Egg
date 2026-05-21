@@ -27,6 +27,9 @@ LOCAL_API="${LOCAL_API:-http://127.0.0.1/w/api.php}"
 LOCAL_USER="${LOCAL_USER:-}"
 LOCAL_PASS="${LOCAL_PASS:-}"
 FORCE=0
+FROM_XML=""
+NO_LOGIN=0
+XML_NAMESPACE=""
 PAGE_LIMIT=50
 COOKIEJAR="/tmp/import_mw_cookies_$$.txt"
 USER_AGENT="${USER_AGENT:-Mozilla/5.0 (import-script)}"
@@ -51,6 +54,9 @@ Options:
   --only-pages      Import only the pages listed with --pages or EXTRA_PAGES
   --pages "A;B;C"    Semicolon-separated list of page titles to import
   --namespaces "A;B;C"  Semicolon-separated namespace names (e.g. Template;MediaWiki;Main)
+  --from-xml <file>   Import pages directly from a MediaWiki XML dump
+  --xml-namespace NS  Limit XML import to a namespace name or numeric id
+  --no-login         Skip local wiki login and edit anonymously
   --delay N          Seconds to sleep between remote requests (default: 1)
   --help             Show this help
 
@@ -58,20 +64,7 @@ Env:
   LOCAL_API, LOCAL_USER, LOCAL_PASS
 
 EOF
-elif [[ ${#NAMESPACES[@]} -gt 0 ]]; then
-  echo "Resolving namespaces: ${NAMESPACES[*]}"
-  for nsname in "${NAMESPACES[@]}"; do
-    id=$(resolve_single_namespace_name_to_id "$nsname" || true)
-    if [[ -n "$id" ]]; then
-      echo "Fetching pages for namespace id: ${id} (name: ${nsname})"
-      mapfile -t PAGES < <(fetch_allpages_from_source "$id")
-      for p in "${PAGES[@]}"; do TARGET_PAGES+=("$p"); done
-    else
-      echo "Namespace '${nsname}' did not resolve; falling back to prefix fetch for '${nsname}'"
-      mapfile -t PAGES < <(fetch_allpages_with_prefix "$nsname")
-      for p in "${PAGES[@]}"; do TARGET_PAGES+=("$p"); done
-    fi
-  done
+}
 
 # Prompt for credentials if not provided
 if [[ -z "$LOCAL_USER" ]]; then
@@ -95,6 +88,9 @@ parse_args() {
       --only-pages) only_pages=1; shift;;
       --all) import_all=1; shift;;
       --namespaces|--ns) ns_arg="$2"; shift 2;;
+          --from-xml) FROM_XML="$2"; shift 2;;
+          --no-login) NO_LOGIN=1; shift;;
+          --xml-namespace) XML_NAMESPACE="$2"; shift 2;;
       --delay) DELAY="$2"; shift 2;;
       --pages) pages_arg="$2"; shift 2;;
       --help) usage; exit 0;;
@@ -118,6 +114,58 @@ parse_args() {
 
   ONLY_TEMPLATES=$only_templates
   IMPORT_ALL=$import_all
+}
+
+# Import pages directly from a MediaWiki XML dump (streaming)
+import_from_xml() {
+  local xmlfile="$1"
+  local ns="$2"
+  if [[ ! -f "$xmlfile" ]]; then echo "XML file not found: $xmlfile" >&2; return 1; fi
+
+  # map common namespace names to ids (default MediaWiki -> 8)
+  case "${ns,,}" in
+    mediawiki) ns_id=8;;
+    template) ns_id=10;;
+    main|\(main\)) ns_id=0;;
+    '') ns_id="";;
+    *)
+      # if it's numeric use it, else use all namespaces
+      if [[ "$ns" =~ ^-?[0-9]+$ ]]; then ns_id="$ns"; else ns_id=""; fi
+      ;;
+  esac
+
+  if [[ "$NO_LOGIN" -ne 1 ]]; then
+    if ! local_login; then echo "Login to local wiki failed" >&2; return 1; fi
+  else
+    echo "Skipping login (anonymous edits)"
+  fi
+
+  if [[ -z "$ns_id" ]]; then
+    echo "Streaming import from XML $xmlfile for all namespaces"
+  else
+    echo "Streaming import from XML $xmlfile for namespace id $ns_id"
+  fi
+
+  python3 - <<PY | while IFS='|' read -r btitle btext; do
+import sys,xml.etree.ElementTree as ET,base64
+nsid=sys.argv[2]
+context=ET.iterparse(sys.argv[1],events=("end",))
+for event,elem in context:
+  if elem.tag.endswith('page'):
+    title=elem.findtext('title') or ''
+    ns=elem.findtext('ns') or '0'
+    if nsid == '' or ns == nsid:
+      text=elem.find('revision').findtext('text') if elem.find('revision') is not None else ''
+      print(base64.b64encode(title.encode()).decode()+"|"+base64.b64encode((text or '').encode()).decode())
+    elem.clear()
+PY "$xmlfile" "$ns_id";
+  do
+    title=$(python3 -c "import sys,base64; print(base64.b64decode(sys.argv[1]).decode())" "$btitle")
+    content=$(python3 -c "import sys,base64; print(base64.b64decode(sys.argv[1]).decode())" "$btext")
+    echo "Importing from XML: $title"
+    local_edit_page "$title" "$content" "Imported from XML"
+    if [[ -n "$DELAY" && "$DELAY" -gt 0 ]]; then sleep "$DELAY"; fi
+  done
 }
 
 resolve_namespace_names_to_ids() {
@@ -435,6 +483,11 @@ print("true" if any(("missing" in p) for p in pages) else "false")
 
 # Run
 parse_args "$@"
+
+if [[ -n "$FROM_XML" ]]; then
+  import_from_xml "$FROM_XML" "$XML_NAMESPACE"
+  exit $?
+fi
 
 # If ONLY_TEMPLATES then collect template list from source and import only those
 if [[ "$IMPORT_ALL" -eq 1 ]]; then
