@@ -66,15 +66,6 @@ Env:
 EOF
 }
 
-# Prompt for credentials if not provided
-if [[ -z "$LOCAL_USER" ]]; then
-  read -r -p "Local wiki username: " LOCAL_USER
-fi
-if [[ -z "$LOCAL_PASS" ]]; then
-  read -r -s -p "Local wiki password: " LOCAL_PASS
-  echo
-fi
-
 parse_args() {
   local pages_arg=""
   local only_templates=0
@@ -135,6 +126,13 @@ import_from_xml() {
   esac
 
   if [[ "$NO_LOGIN" -ne 1 ]]; then
+    if [[ -z "$LOCAL_USER" ]]; then
+      read -r -p "Local wiki username: " LOCAL_USER
+    fi
+    if [[ -z "$LOCAL_PASS" ]]; then
+      read -r -s -p "Local wiki password: " LOCAL_PASS
+      echo
+    fi
     if ! local_login; then echo "Login to local wiki failed" >&2; return 1; fi
   else
     echo "Skipping login (anonymous edits)"
@@ -146,7 +144,7 @@ import_from_xml() {
     echo "Streaming import from XML $xmlfile for namespace id $ns_id"
   fi
 
-  python3 - <<PY | while IFS='|' read -r btitle btext; do
+  python3 - "$xmlfile" "$ns_id" <<'PY' | while IFS='|' read -r btitle btext; do
 import sys,xml.etree.ElementTree as ET,base64
 nsid=sys.argv[2]
 context=ET.iterparse(sys.argv[1],events=("end",))
@@ -158,8 +156,7 @@ for event,elem in context:
       text=elem.find('revision').findtext('text') if elem.find('revision') is not None else ''
       print(base64.b64encode(title.encode()).decode()+"|"+base64.b64encode((text or '').encode()).decode())
     elem.clear()
-PY "$xmlfile" "$ns_id";
-  do
+PY
     title=$(python3 -c "import sys,base64; print(base64.b64decode(sys.argv[1]).decode())" "$btitle")
     content=$(python3 -c "import sys,base64; print(base64.b64decode(sys.argv[1]).decode())" "$btext")
     echo "Importing from XML: $title"
