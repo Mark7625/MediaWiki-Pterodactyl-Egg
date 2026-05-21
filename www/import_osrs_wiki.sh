@@ -29,6 +29,7 @@ LOCAL_PASS="${LOCAL_PASS:-}"
 FORCE=0
 PAGE_LIMIT=50
 COOKIEJAR="/tmp/import_mw_cookies_$$.txt"
+USER_AGENT="${USER_AGENT:-Mozilla/5.0 (import-script)}"
 
 RETRY=2
 DELAY="${DELAY:-1}"
@@ -57,14 +58,20 @@ Env:
   LOCAL_API, LOCAL_USER, LOCAL_PASS
 
 EOF
-}
-
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || { echo "Required command not found: $1" >&2; exit 1; }
-}
-
-require_cmd curl
-require_cmd python3
+elif [[ ${#NAMESPACES[@]} -gt 0 ]]; then
+  echo "Resolving namespaces: ${NAMESPACES[*]}"
+  for nsname in "${NAMESPACES[@]}"; do
+    id=$(resolve_single_namespace_name_to_id "$nsname" || true)
+    if [[ -n "$id" ]]; then
+      echo "Fetching pages for namespace id: ${id} (name: ${nsname})"
+      mapfile -t PAGES < <(fetch_allpages_from_source "$id")
+      for p in "${PAGES[@]}"; do TARGET_PAGES+=("$p"); done
+    else
+      echo "Namespace '${nsname}' did not resolve; falling back to prefix fetch for '${nsname}'"
+      mapfile -t PAGES < <(fetch_allpages_with_prefix "$nsname")
+      for p in "${PAGES[@]}"; do TARGET_PAGES+=("$p"); done
+    fi
+  done
 
 # Prompt for credentials if not provided
 if [[ -z "$LOCAL_USER" ]]; then
@@ -116,7 +123,7 @@ parse_args() {
 resolve_namespace_names_to_ids() {
   # Accepts array of namespace names in NAMESPACES and prints numeric ids (one per line)
   local res
-  res=$(curl -sS "${SOURCE_API}?action=query&meta=siteinfo&siprop=namespaces&format=json") || return 1
+  res=$(curl -sS -A "$USER_AGENT" "${SOURCE_API}?action=query&meta=siteinfo&siprop=namespaces&format=json") || return 1
   local name id lower
   for name in "${NAMESPACES[@]:-}"; do
     [[ -z "$name" ]] && continue
@@ -138,11 +145,19 @@ except Exception:
   sys.exit(0)
 ns=j.get("query",{}).get("namespaces",{})
 for k,v in ns.items():
-  label=(v.get("canonical") if isinstance(v,dict) else None) or (v.get("*") if isinstance(v,dict) else None) or ""
-  if label.lower()==name:
+  label=""
+  if isinstance(v,dict):
+    label=(v.get("canonical") or v.get("*") or v.get("name") or "")
+  else:
+    label=str(v)
+  if label and label.lower()==name:
     print(k); sys.exit(0)
 for k,v in ns.items():
-  label=(v.get("canonical") if isinstance(v,dict) else None) or (v.get("*") if isinstance(v,dict) else None) or ""
+  label=""
+  if isinstance(v,dict):
+    label=(v.get("canonical") or v.get("*") or v.get("name") or "")
+  else:
+    label=str(v)
   if name in label.lower():
     print(k); sys.exit(0)
 ' "$name")
@@ -152,6 +167,75 @@ for k,v in ns.items():
       echo "Warning: namespace '$name' not found on source; skipping" >&2
     fi
   done
+}
+
+resolve_single_namespace_name_to_id() {
+  local name="$1"
+  if [[ -z "$name" ]]; then return 0; fi
+  if [[ "$name" =~ ^-?[0-9]+$ ]]; then echo "$name"; return 0; fi
+  local res
+  res=$(curl -sS -A "$USER_AGENT" "${SOURCE_API}?action=query&meta=siteinfo&siprop=namespaces&format=json") || return 1
+  local id
+  id=$(echo "$res" | python3 -c 'import sys,json
+name=sys.argv[1].lower()
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  sys.exit(0)
+ns=j.get("query",{}).get("namespaces",{})
+for k,v in ns.items():
+  label=""
+  if isinstance(v,dict):
+    label=(v.get("canonical") or v.get("*") or v.get("name") or "")
+  else:
+    label=str(v)
+  if label and label.lower()==name:
+    print(k); sys.exit(0)
+for k,v in ns.items():
+  label=""
+  if isinstance(v,dict):
+    label=(v.get("canonical") or v.get("*") or v.get("name") or "")
+  else:
+    label=str(v)
+  if name in label.lower():
+    print(k); sys.exit(0)
+'
+"$name")
+  echo "$id"
+}
+
+fetch_allpages_with_prefix() {
+  # Fetch pages whose title starts with PREFIX:
+  local prefix="$1"
+  local apcontinue=""
+  local -a pages=()
+  while :; do
+    local url="${SOURCE_API}?action=query&format=json&list=allpages&aplimit=max&apprefix=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "${prefix}:")"
+    if [[ -n "$apcontinue" ]]; then
+      url+="&apcontinue=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$apcontinue")"
+    fi
+    local res
+    res=$(curl -sS -A "$USER_AGENT" "$url")
+    mapfile -t titles < <(echo "$res" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  sys.exit(0)
+for p in j.get("query",{}).get("allpages",[]):
+  print(p.get("title",""))
+')
+    pages+=("${titles[@]}")
+    apcontinue=$(echo "$res" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  print(""); sys.exit(0)
+print(j.get("continue",{}).get("apcontinue",""))
+')
+    if [[ -z "$apcontinue" ]]; then break; fi
+    if [[ -n "$DELAY" && "$DELAY" -gt 0 ]]; then sleep "$DELAY"; fi
+  done
+  printf "%s\n" "${pages[@]}"
 }
 
 # Fetch all page titles in a namespace from SOURCE_API
