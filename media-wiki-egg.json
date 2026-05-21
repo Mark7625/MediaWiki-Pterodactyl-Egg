@@ -300,16 +300,6 @@
             "field_type": "text"
         },
         {
-            "name": "Run Update Mode",
-            "description": "When enabled, the egg will pull updates for installed extensions (git pull where possible) and run composer installs in-place, then exit without re-running the installer or touching the database. Use 1/true to enable.",
-            "env_variable": "MW_UPDATE",
-            "default_value": "false",
-            "user_viewable": true,
-            "user_editable": true,
-            "rules": "nullable|in:0,1,true,false",
-            "field_type": "text"
-        },
-        {
             "name": "MediaWiki Extensions",
             "description": "Extra extensions (comma-separated). Bundled lists in modules\/mediawiki\/*.txt are always installed.",
             "env_variable": "MW_EXTENSIONS",
