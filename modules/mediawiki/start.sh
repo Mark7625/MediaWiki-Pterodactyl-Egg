@@ -119,6 +119,73 @@ mw_resolve_php_bin() {
   fi
 }
 
+mw_local_php_ext_dirs() {
+  mkdir -p "${CONTAINER_ROOT}/php/extensions" "${CONTAINER_ROOT}/php/conf.d"
+}
+
+mw_phpize_bin() {
+  if command -v "phpize${PHP_VERSION}" >/dev/null 2>&1; then
+    echo "phpize${PHP_VERSION}"
+  elif command -v phpize >/dev/null 2>&1; then
+    echo phpize
+  else
+    return 1
+  fi
+}
+
+mw_php_config_bin() {
+  if command -v "php-config${PHP_VERSION}" >/dev/null 2>&1; then
+    echo "php-config${PHP_VERSION}"
+  elif command -v php-config >/dev/null 2>&1; then
+    echo php-config
+  else
+    return 1
+  fi
+}
+
+mw_build_user_extension() {
+  local name="$1" pkg="$2" url="$3"
+  local ext_dir="${CONTAINER_ROOT}/php/extensions"
+  local conf_dir="${CONTAINER_ROOT}/php/conf.d"
+  local tmp_dir="/tmp/${name}-build"
+  rm -rf "$tmp_dir"
+  mkdir -p "$tmp_dir"
+  pushd "$tmp_dir" >/dev/null 2>&1 || return 1
+
+  if [[ -n "$url" ]]; then
+    wget -q -O "${name}.tar.gz" "$url" || { popd >/dev/null 2>&1; return 1; }
+    tar -xzf "${name}.tar.gz" --strip-components=1
+  else
+    pecl download "${pkg:-$name}" || { popd >/dev/null 2>&1; return 1; }
+    tarball=$(ls *.tgz 2>/dev/null | head -n 1)
+    if [[ -z "$tarball" ]]; then
+      tarball=$(ls *.tar.gz 2>/dev/null | head -n 1)
+    fi
+    [[ -n "$tarball" ]] || { popd >/dev/null 2>&1; return 1; }
+    tar -xzf "$tarball" --strip-components=1
+  fi
+
+  local phpize_bin
+  phpize_bin=$(mw_phpize_bin) || { popd >/dev/null 2>&1; return 1; }
+  local php_config_bin
+  php_config_bin=$(mw_php_config_bin) || { popd >/dev/null 2>&1; return 1; }
+
+  "$phpize_bin" || { popd >/dev/null 2>&1; return 1; }
+  ./configure --with-php-config="/usr/bin/$php_config_bin" || { popd >/dev/null 2>&1; return 1; }
+  make -j"$(nproc)" || { popd >/dev/null 2>&1; return 1; }
+
+  local built_so=".libs/${name}.so"
+  if [[ ! -f "$built_so" ]]; then
+    built_so="modules/${name}.so"
+  fi
+  [[ -f "$built_so" ]] || { popd >/dev/null 2>&1; return 1; }
+
+  cp "$built_so" "$ext_dir/" || { popd >/dev/null 2>&1; return 1; }
+  echo "extension=${ext_dir}/${name}.so" >"${conf_dir}/20-${name}.ini"
+  popd >/dev/null 2>&1
+  return 0
+}
+
 mw_db_mysqli_server() {
   if [[ "${DB_PORT}" == "3306" ]]; then
     echo "${DB_HOST}"
@@ -229,6 +296,22 @@ EOF
   fi
 }
 
+mw_apply_debug_settings() {
+  local settings="$1"
+  [[ -f "$settings" ]] || return 0
+  if is_enabled "${MW_DEBUG:-0}"; then
+    mw_append_block "$settings" "# BEGIN PTERODACTYL DEBUG" <<'EOF'
+
+# Enable detailed exception output and a debug log when debug mode is turned on via MW_DEBUG
+$wgShowExceptionDetails = true;
+$wgDebugLogFile = __DIR__ . '/debug.log';
+ini_set( 'display_errors', 1 );
+
+# END PTERODACTYL DEBUG
+EOF
+  fi
+}
+
 mw_prepare_images_security() {
   local img="${WWW_DIR}/images"
   mkdir -p "$img"
@@ -272,6 +355,75 @@ if [[ -f "${MW_LIB_DIR}/php-mediawiki-setup.sh" ]]; then
   # shellcheck source=../lib/php-mediawiki-setup.sh
   source "${MW_LIB_DIR}/php-mediawiki-setup.sh"
   php_mediawiki_configure "$CONTAINER_ROOT"
+fi
+
+# Ensure LuaSandbox, Wikidiff2 and Pygments are available; attempt runtime install if missing.
+if ! php -r 'exit(extension_loaded("luasandbox") && extension_loaded("wikidiff2") ? 0 : 1);' 2>/dev/null; then
+  echo -e "${YELLOW}[MediaWiki] LuaSandbox or Wikidiff2 missing; attempting runtime install (may take several minutes)${NC}"
+  mw_local_php_ext_dirs
+  if [[ $EUID -ne 0 ]]; then
+    echo -e "${YELLOW}[MediaWiki] Running as non-root; attempting local extension install in /home/container/php/extensions${NC}"
+    if ! command -v pecl >/dev/null 2>&1 || ! command -v phpize >/dev/null 2>&1 || ! command -v php-config >/dev/null 2>&1; then
+      echo -e "${YELLOW}[MediaWiki] Local install skipped: build tools unavailable. Build the Docker image with LuaSandbox/Wikidiff2 installed instead.${NC}"
+    else
+      echo -e "${YELLOW}[MediaWiki] Installing LuaSandbox locally...${NC}"
+      mw_build_user_extension luasandbox luasandbox ""
+      echo -e "${YELLOW}[MediaWiki] Installing excimer locally...${NC}"
+      mw_build_user_extension excimer excimer ""
+      echo -e "${YELLOW}[MediaWiki] Installing Wikidiff2 locally...${NC}"
+      mw_build_user_extension wikidiff2 wikidiff2 "https://releases.wikimedia.org/wikidiff2/wikidiff2-1.14.1.tar.gz"
+      echo -e "${GREEN}[MediaWiki] Local extension install finished. Check php -m for luasandbox/wikidiff2/excimer${NC}"
+    fi
+  elif [[ ! -w "/etc/php/${PHP_VERSION}/mods-available" ]]; then
+    echo -e "${YELLOW}[MediaWiki] Runtime module install skipped: PHP mods directory is read-only. Build the Docker image with LuaSandbox/Wikidiff2 installed instead.${NC}"
+  elif ! command -v pecl >/dev/null 2>&1; then
+    echo -e "${YELLOW}[MediaWiki] Runtime module install skipped: pecl is not installed in this image. Build the Docker image with LuaSandbox/Wikidiff2 installed instead.${NC}"
+  elif ! command -v apt-get >/dev/null 2>&1; then
+    echo -e "${YELLOW}[MediaWiki] Runtime module install skipped: apt-get is not available in this image. Build the Docker image with LuaSandbox/Wikidiff2 installed instead.${NC}"
+  else
+    # Install build dependencies (best-effort)
+    apt-get update -qq >/dev/null 2>&1 || true
+    apt-get install -y --no-install-recommends build-essential pkg-config wget ca-certificates \
+      "php${PHP_VERSION}-dev" php-pear liblua5.1-0-dev libthai-dev zlib1g-dev libzip-dev python3 python3-pip git || true
+
+    # Install LuaSandbox via PECL
+    yes '' | pecl install luasandbox-4.1.3 || true
+    echo "extension=luasandbox.so" >/etc/php/${PHP_VERSION}/mods-available/luasandbox.ini || true
+    phpenmod -v "${PHP_VERSION}" luasandbox 2>/dev/null || true
+
+    # Install Excimer via PECL for Speedscope
+    yes '' | pecl install excimer || true
+    echo "extension=excimer.so" >/etc/php/${PHP_VERSION}/mods-available/excimer.ini || true
+    phpenmod -v "${PHP_VERSION}" excimer 2>/dev/null || true
+
+    # Build and install Wikidiff2
+    WIKIDIFF2_VER="1.14.1"
+    WIKIDIFF2_TGZ="/tmp/wikidiff2-${WIKIDIFF2_VER}.tar.gz"
+    if [[ ! -f "$WIKIDIFF2_TGZ" ]]; then
+      wget -q -O "$WIKIDIFF2_TGZ" "https://releases.wikimedia.org/wikidiff2/wikidiff2-${WIKIDIFF2_VER}.tar.gz" || true
+    fi
+    rm -rf /tmp/wikidiff2-src || true
+    mkdir -p /tmp/wikidiff2-src || true
+    tar -xzf "$WIKIDIFF2_TGZ" -C /tmp/wikidiff2-src --strip-components=1 || true
+    if [[ -d /tmp/wikidiff2-src ]]; then
+      cd /tmp/wikidiff2-src || true
+      phpize${PHP_VERSION} || true
+      ./configure --with-php-config="/usr/bin/php-config${PHP_VERSION}" --with-icu-dir=/usr/local || true
+      make -j"$(nproc)" || true
+      make install || true
+      echo "extension=wikidiff2.so" >/etc/php/${PHP_VERSION}/mods-available/wikidiff2-built.ini || true
+      phpenmod -v "${PHP_VERSION}" wikidiff2-built 2>/dev/null || true
+    fi
+
+    # Ensure Pygments installed
+    if command -v pip3 >/dev/null 2>&1; then
+      pip3 install --no-cache-dir Pygments || true
+    fi
+
+    # Restart PHP-FPM if available
+    service php${PHP_VERSION}-fpm restart 2>/dev/null || systemctl restart php${PHP_VERSION}-fpm 2>/dev/null || true
+    echo -e "${GREEN}[MediaWiki] Runtime module install attempt finished. Check php -m for luasandbox/wikidiff2${NC}"
+  fi
 fi
 
 SETTINGS="${WWW_DIR}/LocalSettings.php"
@@ -382,6 +534,20 @@ mw_resolve_skins
 echo -e "${WHITE}[MediaWiki] Extensions ready: ${RESOLVED_EXTENSIONS:-none}${NC}"
 echo -e "${WHITE}[MediaWiki] Skins ready: ${RESOLVED_SKINS:-none}${NC}"
 
+header "Installing Composer dependencies"
+cd "$WWW_DIR"
+if [[ -f composer.json ]] && command -v composer >/dev/null 2>&1; then
+  echo -e "${WHITE}[MediaWiki] Running composer install for extensions…${NC}"
+  # Install without --no-dev first to ensure all extension dependencies (like wikimedia/equivset) are pulled in
+  if composer install --optimize-autoloader 2>&1 | tail -n 50; then
+    echo -e "${GREEN}[MediaWiki] Composer dependencies installed successfully${NC}"
+  else
+    echo -e "${YELLOW}[MediaWiki] Warning: composer install failed with status $?. Wiki may have missing dependencies.${NC}"
+  fi
+else
+  echo -e "${YELLOW}[MediaWiki] composer.json not found or composer CLI not available; skipping Composer install${NC}"
+fi
+
 header "Running MediaWiki CLI installer (${DB_HOST}:${DB_PORT}/${DB_NAME})"
 
 cd "$WWW_DIR"
@@ -461,6 +627,7 @@ fi
 mw_sync_localsettings_from_panel "$SETTINGS"
 mw_apply_wiki_entrypoints "$SETTINGS"
 mw_apply_cache_extensions "$SETTINGS"
+mw_apply_debug_settings "$SETTINGS"
 
 if is_enabled "$REDIS_STATUS"; then
   mw_append_block "$SETTINGS" "# BEGIN PTERODACTYL REDIS" <<EOF
@@ -498,6 +665,17 @@ EOF
 
 mkdir -p "${CONTAINER_ROOT}/cache" "${CONTAINER_ROOT}/tmp"
 chmod 755 "${CONTAINER_ROOT}/cache" "${CONTAINER_ROOT}/tmp" 2>/dev/null || true
+
+header "Final Composer install (if needed)"
+cd "$WWW_DIR"
+if [[ -f composer.json ]] && command -v composer >/dev/null 2>&1; then
+  echo -e "${WHITE}[MediaWiki] Running final composer install…${NC}"
+  if composer install --optimize-autoloader 2>&1 | tail -n 50; then
+    echo -e "${GREEN}[MediaWiki] Composer dependencies finalized${NC}"
+  else
+    echo -e "${YELLOW}[MediaWiki] Warning: final composer install failed. Wiki may have missing dependencies.${NC}"
+  fi
+fi
 
 echo -e "${GREEN}[MediaWiki] Installed successfully.${NC}"
 echo -e "${GREEN}[MediaWiki] URL: ${MW_SERVER}${NC}"

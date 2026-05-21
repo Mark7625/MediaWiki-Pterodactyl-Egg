@@ -69,15 +69,11 @@ Override with panel var `MW_SKINS` (comma-separated). List: `modules/mediawiki/s
 
 Installed from `modules/mediawiki/extensions-wikimedia.txt` (extdist) and `extensions-weirdgloop.txt` (Git forks). Add more with optional `MW_EXTENSIONS`.
 
-**Wikimedia / extdist** — see `modules/mediawiki/extensions-wikimedia.txt`
+**Wikimedia / extdist:** AJAXPoll, AntiSpoof, CategoryTree, CheckUser, Cite, CodeEditor, CodeMirror, ContactPage, Description2, Editcount, Gadgets, GlobalBlocking, ImageMap, InputBox, JsonConfig, Kartographer, LinkSuggest, LoginNotify, LuaSandbox, Math, MultimediaViewer, NewUserMessage, OATHAuth, OAuth, ParserFunctions, Poem, ProtectSite, RandomSelection, RevisionSlider, SpamBlacklist, SyntaxHighlight, TemplateData, TemplateSandbox, TemplateStyles, TextExtracts, Thanks, TitleBlacklist, Variables, WikiEditor
 
-AJAXPoll, AntiSpoof, CategoryTree, CheckUser, Cite, CodeEditor, CodeMirror, ContactPage, Description2, Editcount, Gadgets, GlobalBlocking, ImageMap, InputBox, JsonConfig, Kartographer, LinkSuggest, LoginNotify, Math, MultimediaViewer, NewUserMessage, OATHAuth, OAuth, ParserFunctions, Poem, ProtectSite, RandomSelection, RevisionSlider, SpamBlacklist, SyntaxHighlight, TemplateData, TemplateSandbox, TemplateStyles, TextExtracts, Thanks, TitleBlacklist, Variables, WikiEditor
+**Weird Gloop / community forks:** VariablesLua, SimpleBatchUpload, GloopTweaks, GCS, Tabber, DynamicPageList4, Bucket, RSHiscores, TimedMediaHandler, MigrateUserAccount, Scribunto, VisualEditor, Echo, GlobalUserrights, MobileFrontend, Popups, EmbedVideo, SearchDigest, Less, PageImages, DismissableSiteNotice, TemplateStylesExtender, Discord, EasyTimeline, GloopControl, InternalExternalLinks, RSLookup, Parsoid
 
-**Weird Gloop / community forks** — see `modules/mediawiki/extensions-weirdgloop.txt`
-
-AbuseFilter, Bucket, DismissableSiteNotice, Discord, DynamicPageList4, Echo, EmbedVideo, GCS, GlobalUserrights, GloopTweaks, Less, MessageCachePerformance, MigrateUserAccount, MobileFrontend, PageImages, Popups, RSHiscores, Scribunto, SearchDigest, SimpleBatchUpload, Speedscope, Tabber, TimedMediaHandler, TemplateStylesExtender, VariablesLua, VisualEditor
-
-**Not bundled** (no reliable public REL1_45 mirror): EasyTimeline — add manually via `MW_EXTENSIONS` if needed.
+*See `modules/mediawiki/extensions-weirdgloop.txt` and `extensions-wikimedia.txt` for full details.*
 
 **Optional (panel, not in default lists)**
 
@@ -209,6 +205,48 @@ Example:
 # Daily backup at 2 AM
 0 2 * * * tar -czf /home/container/backups/backup-$(date +%Y%m%d).tar.gz /home/container/www
 ```
+
+---
+
+## Troubleshooting: Missing PHP Extensions
+
+If you see errors about **LuaSandbox, Wikidiff2, or Excimer** not being available:
+
+### Cause
+
+These extensions are compiled at **Docker image build time**. They are not available in older images.
+
+### Solution: Rebuild the image
+
+Rebuild with the updated build script:
+
+```bash
+./scripts/build-image.sh 8.2  # or your PHP version (8.2, 8.3, 8.4)
+```
+
+Then redeploy the container using the new image.
+
+### Manual install (if needed)
+
+If the image has build tools available, you can build locally inside the container as root:
+
+```bash
+apt-get update && apt-get install -y build-essential php-dev php-pear liblua5.1-dev libthai-dev zlib1g-dev libzip-dev
+
+# LuaSandbox
+yes '' | pecl install luasandbox-4.1.3
+echo "extension=luasandbox.so" > /home/container/php/conf.d/20-luasandbox.ini
+
+# Wikidiff2
+cd /tmp && wget https://releases.wikimedia.org/wikidiff2/wikidiff2-1.14.1.tar.gz && tar -xzf wikidiff2-1.14.1.tar.gz && cd wikidiff2-1.14.1
+phpize8.2 && ./configure --with-php-config=/usr/bin/php-config8.2 && make && make install
+echo "extension=wikidiff2.so" > /home/container/php/conf.d/20-wikidiff2.ini
+
+# Restart
+systemctl restart php8.2-fpm
+```
+
+**Note:** Non-root containers cannot install at runtime. Rebuild the image instead.
 
 ---
 

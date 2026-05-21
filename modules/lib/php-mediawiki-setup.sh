@@ -83,6 +83,7 @@ php_mediawiki_verify_extensions() {
   php_mediawiki_has_module "$php_bin" imagick "$php_ini" || rec_missing+=("imagick")
   php_mediawiki_has_module "$php_bin" luasandbox "$php_ini" || rec_missing+=("luasandbox")
   php_mediawiki_has_module "$php_bin" wikidiff2 "$php_ini" || rec_missing+=("wikidiff2")
+  php_mediawiki_has_module "$php_bin" excimer "$php_ini" || rec_missing+=("excimer")
   if ! "${php_bin}" -c "$php_ini" -m 2>/dev/null | grep -qi opcache; then
     rec_missing+=("opcache")
   fi

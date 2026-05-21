@@ -15,7 +15,6 @@ Math
 Gadgets
 SpamBlacklist
 TitleBlacklist
-EasyTimeline
 AntiSpoof
 CheckUser
 ContactPage

@@ -202,6 +202,16 @@
             "field_type": "text"
         },
         {
+            "name": "Enable Debug Mode",
+            "description": "Enable MediaWiki debug output and create a debug log (adds $wgShowExceptionDetails and $wgDebugLogFile to LocalSettings.php).\r\n\r\n0 = false (default)\r\n1 = true",
+            "env_variable": "MW_DEBUG",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
             "name": "Database Port",
             "description": "MariaDB port on this server (default 3306). Change only if you need a different port.",
             "env_variable": "DB_PORT",

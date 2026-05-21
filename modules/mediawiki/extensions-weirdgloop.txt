@@ -9,11 +9,12 @@ DynamicPageList4|https://github.com/weirdgloop/mediawiki-extensions-DynamicPageL
 Bucket|https://github.com/weirdgloop/mediawiki-extensions-Bucket|main
 RSHiscores|https://github.com/weirdgloop/mediawiki-extensions-RSHiscores|master
 TimedMediaHandler|https://github.com/weirdgloop/mediawiki-extensions-TimedMediaHandler|weirdgloop/REL1_45
-MigrateUserAccount|https://github.com/weirdgloop/mediawiki-extensions-MigrateUserAccount|master
+MigrateUserAccount|https://github.com/weirdgloop/mediawiki-extensions-MigrateUserAccount|REL1_45
 Scribunto|https://github.com/weirdgloop/mediawiki-extensions-Scribunto|weirdgloop/REL1_45
 VisualEditor|https://github.com/weirdgloop/mediawiki-extensions-VisualEditor|weirdgloop/REL1_45
 Echo|https://github.com/weirdgloop/mediawiki-extensions-Echo|weirdgloop/REL1_45
-AbuseFilter|https://github.com/weirdgloop/mediawiki-extensions-AbuseFilter|weirdgloop/REL1_45
+# AbuseFilter — temporarily disabled (missing Equivset Composer dependency)
+# AbuseFilter|https://github.com/weirdgloop/mediawiki-extensions-AbuseFilter|weirdgloop/REL1_45
 GlobalUserrights|https://github.com/weirdgloop/mediawiki-extensions-GlobalUserrights|weirdgloop/REL1_45
 MobileFrontend|https://github.com/weirdgloop/mediawiki-extensions-MobileFrontend|weirdgloop/REL1_45
 Popups|https://github.com/weirdgloop/mediawiki-extensions-Popups|weirdgloop/REL1_45
@@ -24,5 +25,11 @@ PageImages|https://github.com/weirdgloop/mediawiki-extensions-PageImages|weirdgl
 DismissableSiteNotice|https://github.com/weirdgloop/mediawiki-extensions-DismissableSiteNotice|weirdgloop/REL1_45
 TemplateStylesExtender|https://github.com/octfx/mediawiki-extensions-TemplateStylesExtender|master
 Discord|https://github.com/jayktaylor/mw-discord|master
-MessageCachePerformance|https://github.com/weirdgloop/mediawiki-extensions-MessageCachePerformance|weirdgloop/main
-EasyTimeline|https://github.com/wikimedia/mediawiki-extensions-timeline/REL1_45
+# MessageCachePerformance — deprecated hook (Hook MessageCache::get was deprecated in MediaWiki 1.41)
+# MessageCachePerformance|https://github.com/weirdgloop/mediawiki-extensions-MessageCachePerformance|weirdgloop/main
+EasyTimeline|https://github.com/wikimedia/mediawiki-extensions-timeline.git|REL1_45
+GloopControl|https://github.com/weirdgloop/mediawiki-extensions-GloopControl|weirdgloop/REL1_45
+InternalExternalLinks|https://github.com/weirdgloop/mediawiki-extensions-InternalExternalLinks|weirdgloop/REL1_45
+RSLookup|https://github.com/weirdgloop/mediawiki-extensions-RSLookup|weirdgloop/REL1_45
+Parsoid|https://github.com/weirdgloop/mediawiki-extensions-Parsoid|weirdgloop/REL1_45
+# Speedscope|https://github.com/weirdgloop/mediawiki-extensions-Speedscope|weirdgloop/REL1_45

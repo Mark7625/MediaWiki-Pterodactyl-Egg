@@ -118,8 +118,6 @@ COPY scripts/docker-build-icu-lua-wikidiff.sh /tmp/docker-build-icu-lua-wikidiff
 RUN chmod +x /tmp/docker-build-icu-lua-wikidiff.sh \
     && PHP_VERSION="${PHP_VERSION}" /tmp/docker-build-icu-lua-wikidiff.sh \
     && rm -f /tmp/docker-build-icu-lua-wikidiff.sh \
-    && apt-get purge -y build-essential php-pear "php${PHP_VERSION}-dev" \
-    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ionCube Loader (optional - may not be available for newest PHP versions)
@@ -167,7 +165,7 @@ RUN POLICY_FILE=$(find /etc -name "policy.xml" -path "*/ImageMagick*" 2>/dev/nul
 RUN useradd -m -d /home/container/ -s /bin/bash container \
     && echo "USER=container" >> /etc/environment \
     && echo "HOME=/home/container" >> /etc/environment \
-    && mkdir -p /home/container/cache /home/container/tmp /home/container/logs /home/container/www \
+    && mkdir -p /home/container/cache /home/container/tmp /home/container/logs /home/container/www /home/container/php/conf.d /home/container/php/extensions \
     && chown -R container:container /home/container
 
 WORKDIR /home/container

@@ -11,6 +11,8 @@ apt-get install -y --no-install-recommends \
   build-essential pkg-config wget ca-certificates \
   "php${PHP_VERSION}-dev" php-pear \
   liblua5.1-0-dev libthai-dev \
+  zlib1g-dev libzip-dev \
+  python3 python3-pip \
   >/dev/null
 
 ICU_TGZ="/tmp/icu4c-76_1-src.tgz"
@@ -44,10 +46,31 @@ make -j"$(nproc)"
 make install
 echo "intl rebuilt against ICU $(/usr/local/bin/icu-config --version 2>/dev/null || echo 76.1)"
 
+OUTPUT_EXT_DIR="/home/container/php/extensions"
+OUTPUT_CONF_DIR="/home/container/php/conf.d"
+mkdir -p "$OUTPUT_EXT_DIR" "$OUTPUT_CONF_DIR"
+
 # LuaSandbox 4.1.3 via PECL ([LuaSandbox](https://www.mediawiki.org/wiki/LuaSandbox))
 yes '' | pecl install luasandbox-4.1.3
 echo "extension=luasandbox.so" >"/etc/php/${PHP_VERSION}/mods-available/luasandbox.ini"
 phpenmod -v "${PHP_VERSION}" luasandbox 2>/dev/null || true
+EXT_DIR="$(php-config${PHP_VERSION} --extension-dir)"
+if [[ -f "$EXT_DIR/luasandbox.so" ]]; then
+  cp "$EXT_DIR/luasandbox.so" "$OUTPUT_EXT_DIR/"
+  echo "extension=${OUTPUT_EXT_DIR}/luasandbox.so" >"${OUTPUT_CONF_DIR}/20-luasandbox.ini"
+fi
+
+# Excimer via PECL (required by Speedscope)
+yes '' | pecl install excimer
+echo "extension=excimer.so" >"/etc/php/${PHP_VERSION}/mods-available/excimer.ini"
+phpenmod -v "${PHP_VERSION}" excimer 2>/dev/null || true
+if [[ -f "$EXT_DIR/excimer.so" ]]; then
+  cp "$EXT_DIR/excimer.so" "$OUTPUT_EXT_DIR/"
+  echo "extension=${OUTPUT_EXT_DIR}/excimer.so" >"${OUTPUT_CONF_DIR}/20-excimer.ini"
+else
+  echo "ERROR: excimer.so not found after PECL install"
+  exit 1
+fi
 
 # Wikidiff2 from Wikimedia releases ([Wikidiff2](https://www.mediawiki.org/wiki/Wikidiff2))
 WIKIDIFF2_VER="1.14.1"
@@ -66,6 +89,10 @@ make -j"$(nproc)"
 make install
 echo "extension=wikidiff2.so" >"/etc/php/${PHP_VERSION}/mods-available/wikidiff2-built.ini"
 phpenmod -v "${PHP_VERSION}" wikidiff2-built 2>/dev/null || true
+if [[ -f "$EXT_DIR/wikidiff2.so" ]]; then
+  cp "$EXT_DIR/wikidiff2.so" "$OUTPUT_EXT_DIR/"
+  echo "extension=${OUTPUT_EXT_DIR}/wikidiff2.so" >"${OUTPUT_CONF_DIR}/20-wikidiff2.ini"
+fi
 
 php${PHP_VERSION} -m | grep -iE '^(intl|luasandbox|wikidiff2)$' || {
   echo "ERROR: intl, luasandbox, or wikidiff2 not loaded after build"
@@ -73,3 +100,8 @@ php${PHP_VERSION} -m | grep -iE '^(intl|luasandbox|wikidiff2)$' || {
 }
 
 rm -rf /tmp/icu-src /tmp/wikidiff2-src "$PHP_SRC" "$ICU_TGZ" "$WIKIDIFF2_TGZ" "$PHP_TAR"
+
+# Install Pygments for SyntaxHighlight (pygmentize)
+if command -v pip3 >/dev/null 2>&1; then
+  pip3 install --no-cache-dir Pygments >/dev/null || true
+fi
