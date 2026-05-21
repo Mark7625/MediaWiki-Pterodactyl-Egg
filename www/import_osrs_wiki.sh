@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # Usage:
 # 1) Put this file in /home/container/www (or run it from your host against container files).
-# 2) Ensure you have `curl` and `jq` available in the environment where you run it.
+# 2) Ensure you have `curl` and `python3` available in the environment where you run it.
 # 3) Run interactively and provide your local wiki credentials, or set the env vars:
 #    LOCAL_API (default: http://127.0.0.1/w/api.php)
 #    LOCAL_USER
@@ -64,7 +64,7 @@ require_cmd() {
 }
 
 require_cmd curl
-require_cmd jq
+require_cmd python3
 
 # Prompt for credentials if not provided
 if [[ -z "$LOCAL_USER" ]]; then
@@ -130,11 +130,22 @@ resolve_namespace_names_to_ids() {
       echo 0
       continue
     fi
-    id=$(echo "$res" | jq -r --arg name "$name" '(.query.namespaces | to_entries[] | select((.value.canonical // .value["*"]) | ascii_downcase == ($name|ascii_downcase)) | .key) // empty')
-    if [[ -z "$id" ]]; then
-      # try contains match
-      id=$(echo "$res" | jq -r --arg name "$name" '(.query.namespaces | to_entries[] | select(((.value.canonical // .value["*"]) | ascii_downcase) | contains($name|ascii_downcase)) | .key) // empty')
-    fi
+    id=$(echo "$res" | python3 -c 'import sys,json
+name=sys.argv[1].lower()
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  sys.exit(0)
+ns=j.get("query",{}).get("namespaces",{})
+for k,v in ns.items():
+  label=(v.get("canonical") if isinstance(v,dict) else None) or (v.get("*") if isinstance(v,dict) else None) or ""
+  if label.lower()==name:
+    print(k); sys.exit(0)
+for k,v in ns.items():
+  label=(v.get("canonical") if isinstance(v,dict) else None) or (v.get("*") if isinstance(v,dict) else None) or ""
+  if name in label.lower():
+    print(k); sys.exit(0)
+' "$name")
     if [[ -n "$id" ]]; then
       echo "$id"
     else
@@ -164,9 +175,22 @@ fetch_allpages_from_source() {
     if [[ -n "$DELAY" && "$DELAY" -gt 0 ]]; then
       sleep "$DELAY"
     fi
-    mapfile -t titles < <(echo "$res" | jq -r '.query.allpages[].title')
+    mapfile -t titles < <(echo "$res" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  sys.exit(0)
+for p in j.get("query",{}).get("allpages",[]):
+  print(p.get("title",""))
+')
     pages+=("${titles[@]}")
-    apcontinue=$(echo "$res" | jq -r '.continue.apcontinue // empty')
+    apcontinue=$(echo "$res" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  print(""); sys.exit(0)
+print(j.get("continue",{}).get("apcontinue",""))
+')
     if [[ -z "$apcontinue" ]]; then break; fi
   done
 
@@ -186,7 +210,23 @@ fetch_source_content() {
     res=$(curl -sS "$url") || res=""
     # extract content
     local content
-    content=$(echo "$res" | jq -r '.query.pages[] | .revisions[0].slots.main."*" // empty')
+    content=$(echo "$res" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  sys.exit(0)
+pages=j.get("query",{}).get("pages",{})
+for p in pages.values():
+  revs=p.get("revisions") or []
+  if revs:
+    slots=revs[0].get("slots",{})
+    main=slots.get("main",{})
+    cont=main.get("*")
+    if cont:
+      print(cont)
+      sys.exit(0)
+print("")
+')
     if [[ -n "$content" ]]; then
       # polite sleep after successful fetch
       if [[ -n "$DELAY" && "$DELAY" -gt 0 ]]; then sleep "$DELAY"; fi
@@ -210,23 +250,49 @@ local_query_page() {
 }
 
 local_get_csrf_token() {
-  curl -sS -b "$COOKIEJAR" -c "$COOKIEJAR" --data "action=query&meta=tokens&format=json" "$LOCAL_API" | jq -r '.query.tokens.csrftoken'
+  curl -sS -b "$COOKIEJAR" -c "$COOKIEJAR" --data "action=query&meta=tokens&format=json" "$LOCAL_API" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  sys.exit(1)
+print(j.get("query",{}).get("tokens",{}).get("csrftoken",""))
+'
 }
 
 local_login() {
   # Get login token
   local token
-  token=$(curl -sS -c "$COOKIEJAR" "$LOCAL_API?action=query&meta=tokens&type=login&format=json" | jq -r '.query.tokens.logintoken')
+  token=$(curl -sS -c "$COOKIEJAR" "$LOCAL_API?action=query&meta=tokens&type=login&format=json" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  sys.exit(1)
+print(j.get("query",{}).get("tokens",{}).get("logintoken",""))
+')
   if [[ -z "$token" || "$token" == "null" ]]; then echo "Failed to get login token" >&2; return 1; fi
 
   # Post login
   local res
   res=$(curl -sS -b "$COOKIEJAR" -c "$COOKIEJAR" -X POST --data-urlencode "action=login" --data-urlencode "format=json" --data-urlencode "lgname=$LOCAL_USER" --data-urlencode "lgpassword=$LOCAL_PASS" --data-urlencode "lgtoken=$token" "$LOCAL_API")
-  if echo "$res" | jq -e '.login.status == "PASS"' >/dev/null 2>&1; then
+  if echo "$res" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  sys.exit(1)
+st=j.get("login",{}).get("status")
+res=j.get("login",{}).get("result")
+sys.exit(0 if st=="PASS" or res=="Success" else 1)
+'; then
     echo "Logged in as $LOCAL_USER"
     return 0
   else
-    echo "Login failed: $(echo "$res" | jq -r '.login.description // .error.info // empty')" >&2
+    echo "Login failed: $(echo "$res" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  print(""); sys.exit(0)
+print((j.get("login",{}).get("description") or j.get("error",{}).get("info") or ""))
+')" >&2
     return 1
   fi
 }
@@ -260,7 +326,14 @@ import_title() {
   local q
   q=$(local_query_page "$title")
   local missing
-  missing=$(echo "$q" | jq -r '.query.pages[] | has("missing")')
+  missing=$(echo "$q" | python3 -c 'import sys,json
+try:
+  j=json.load(sys.stdin)
+except Exception:
+  print("false"); sys.exit(0)
+pages=j.get("query",{}).get("pages",{}).values()
+print("true" if any(("missing" in p) for p in pages) else "false")
+')
   if [[ "$missing" == "true" ]]; then
     echo "Local page missing; creating $title"
     local_edit_page "$title" "$content" "Imported from oldschool.runescape.wiki"
