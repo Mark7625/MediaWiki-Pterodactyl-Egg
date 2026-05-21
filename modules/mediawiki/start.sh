@@ -147,11 +147,11 @@ mw_install_extension_composer_dependencies() {
     [[ -f "${ext_dir}/composer.json" ]] || continue
 
     echo -e "${WHITE}[MediaWiki] Running composer install for extension ${ext_dir##*/}…${NC}"
-      if (cd "$ext_dir" && COMPOSER_MEMORY_LIMIT=-1 "$composer_bin" install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress -o 2>&1 | tail -n 100); then
-        echo -e "${GREEN}[MediaWiki]   ✓ ${ext_dir##*/}${NC}"
-      else
-        echo -e "${YELLOW}[MediaWiki]   Warning: composer install failed for ${ext_dir##*/}. It may have missing dependencies or network/auth prompts.${NC}"
-      fi
+    if (cd "$ext_dir" && "$composer_bin" install --no-dev --optimize-autoloader 2>&1 | tail -n 50); then
+      echo -e "${GREEN}[MediaWiki]   ✓ ${ext_dir##*/}${NC}"
+    else
+      echo -e "${YELLOW}[MediaWiki]   Warning: composer install failed for ${ext_dir##*/}. It may have missing dependencies.${NC}"
+    fi
     installed=1
   done
 
@@ -182,13 +182,13 @@ mw_update_mode() {
 
     if [[ -n "${composer_bin}" && -f "${ext_dir}/composer.json" ]]; then
       echo -e "${WHITE}[MediaWiki] Running composer install for extension ${name}...${NC}"
-      (cd "$ext_dir" && COMPOSER_MEMORY_LIMIT=-1 "$composer_bin" install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress -o 2>&1 | tail -n 100) || echo -e "${YELLOW}[MediaWiki] composer failed for ${name}${NC}"
+      (cd "$ext_dir" && "$composer_bin" install --no-dev --optimize-autoloader 2>&1 | tail -n 50) || echo -e "${YELLOW}[MediaWiki] composer failed for ${name}${NC}"
     fi
   done
 
   if [[ -n "${composer_bin}" && -f "${WWW_DIR}/composer.json" ]]; then
     echo -e "${WHITE}[MediaWiki] Running composer install for wiki root...${NC}"
-    (cd "${WWW_DIR}" && COMPOSER_MEMORY_LIMIT=-1 "$composer_bin" install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress -o 2>&1 | tail -n 100) || echo -e "${YELLOW}[MediaWiki] composer install failed at wiki root${NC}"
+    (cd "${WWW_DIR}" && "$composer_bin" install --no-dev --optimize-autoloader 2>&1 | tail -n 50) || echo -e "${YELLOW}[MediaWiki] composer install failed at wiki root${NC}"
   fi
 
   echo -e "${GREEN}[MediaWiki] Update mode finished${NC}"
@@ -621,7 +621,7 @@ cd "$WWW_DIR"
 if [[ -f composer.json ]] && command -v composer >/dev/null 2>&1; then
   echo -e "${WHITE}[MediaWiki] Running composer install for extensions…${NC}"
   # Install without --no-dev first to ensure all extension dependencies (like wikimedia/equivset) are pulled in
-  if COMPOSER_MEMORY_LIMIT=-1 composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress -o 2>&1 | tail -n 100; then
+  if composer install --optimize-autoloader 2>&1 | tail -n 50; then
     echo -e "${GREEN}[MediaWiki] Composer dependencies installed successfully${NC}"
   else
     echo -e "${YELLOW}[MediaWiki] Warning: composer install failed with status $?. Wiki may have missing dependencies.${NC}"
@@ -754,7 +754,7 @@ header "Final Composer install (if needed)"
 cd "$WWW_DIR"
 if [[ -f composer.json ]] && command -v composer >/dev/null 2>&1; then
   echo -e "${WHITE}[MediaWiki] Running final composer install…${NC}"
-  if COMPOSER_MEMORY_LIMIT=-1 composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress -o 2>&1 | tail -n 100; then
+  if composer install --optimize-autoloader 2>&1 | tail -n 50; then
     echo -e "${GREEN}[MediaWiki] Composer dependencies finalized${NC}"
   else
     echo -e "${YELLOW}[MediaWiki] Warning: final composer install failed. Wiki may have missing dependencies.${NC}"
