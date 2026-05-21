@@ -31,6 +31,7 @@ DB_PASSWORD="${DB_PASSWORD:-}"
 MW_SITE_NAME="${MW_SITE_NAME:-My Wiki}"
 MW_ADMIN_USER="${MW_ADMIN_USER:-admin}"
 MW_ADMIN_PASS="${MW_ADMIN_PASS:-}"
+MW_UPDATE="${MW_UPDATE:-false}"
 
 MW_LANG="${MW_LANG:-en}"
 MW_SERVER="${MW_SERVER:-}"
@@ -117,6 +118,80 @@ mw_resolve_php_bin() {
     echo -e "${RED}[MediaWiki] PHP not found.${NC}"
     exit 1
   fi
+}
+
+mw_find_composer() {
+  if command -v composer >/dev/null 2>&1; then
+    echo "composer"
+  elif [[ -x "/usr/local/bin/composer" ]]; then
+    echo "/usr/local/bin/composer"
+  elif [[ -x "/usr/bin/composer" ]]; then
+    echo "/usr/bin/composer"
+  else
+    return 1
+  fi
+}
+
+mw_install_extension_composer_dependencies() {
+  local composer_bin
+  if ! composer_bin="$(mw_find_composer)"; then
+    echo -e "${YELLOW}[MediaWiki] composer CLI not available; skipping extension composer installs${NC}"
+    return 0
+  fi
+
+  local ext_dir
+  local installed=0
+
+  for ext_dir in "${WWW_DIR}/extensions/"*; do
+    [[ -d "$ext_dir" ]] || continue
+    [[ -f "${ext_dir}/composer.json" ]] || continue
+
+    echo -e "${WHITE}[MediaWiki] Running composer install for extension ${ext_dir##*/}…${NC}"
+    if (cd "$ext_dir" && "$composer_bin" install --no-dev --optimize-autoloader 2>&1 | tail -n 50); then
+      echo -e "${GREEN}[MediaWiki]   ✓ ${ext_dir##*/}${NC}"
+    else
+      echo -e "${YELLOW}[MediaWiki]   Warning: composer install failed for ${ext_dir##*/}. It may have missing dependencies.${NC}"
+    fi
+    installed=1
+  done
+
+  if [[ "$installed" -eq 0 ]]; then
+    echo -e "${WHITE}[MediaWiki] No extensions with composer.json found; skipping extension composer installs${NC}"
+  fi
+}
+
+mw_update_mode() {
+  echo -e "${WHITE}[MediaWiki] Update mode: pulling git extensions and running composer installs${NC}"
+  local composer_bin
+  if composer_bin="$(mw_find_composer)" 2>/dev/null; then
+    echo -e "${WHITE}[MediaWiki] composer CLI found: ${composer_bin}${NC}"
+  else
+    composer_bin=""
+    echo -e "${YELLOW}[MediaWiki] composer CLI not found; will skip composer installs${NC}"
+  fi
+
+  local ext_dir
+  for ext_dir in "${WWW_DIR}/extensions/"*; do
+    [[ -d "$ext_dir" ]] || continue
+    local name
+    name="${ext_dir##*/}"
+    if [[ -d "${ext_dir}/.git" ]]; then
+      echo -e "${WHITE}[MediaWiki] Pulling git for extension ${name}...${NC}"
+      git -C "$ext_dir" pull --ff-only 2>/dev/null || git -C "$ext_dir" fetch --all --prune || true
+    fi
+
+    if [[ -n "${composer_bin}" && -f "${ext_dir}/composer.json" ]]; then
+      echo -e "${WHITE}[MediaWiki] Running composer install for extension ${name}...${NC}"
+      (cd "$ext_dir" && "$composer_bin" install --no-dev --optimize-autoloader 2>&1 | tail -n 50) || echo -e "${YELLOW}[MediaWiki] composer failed for ${name}${NC}"
+    fi
+  done
+
+  if [[ -n "${composer_bin}" && -f "${WWW_DIR}/composer.json" ]]; then
+    echo -e "${WHITE}[MediaWiki] Running composer install for wiki root...${NC}"
+    (cd "${WWW_DIR}" && "$composer_bin" install --no-dev --optimize-autoloader 2>&1 | tail -n 50) || echo -e "${YELLOW}[MediaWiki] composer install failed at wiki root${NC}"
+  fi
+
+  echo -e "${GREEN}[MediaWiki] Update mode finished${NC}"
 }
 
 mw_local_php_ext_dirs() {
@@ -534,6 +609,13 @@ mw_resolve_skins
 echo -e "${WHITE}[MediaWiki] Extensions ready: ${RESOLVED_EXTENSIONS:-none}${NC}"
 echo -e "${WHITE}[MediaWiki] Skins ready: ${RESOLVED_SKINS:-none}${NC}"
 
+if is_enabled "$MW_UPDATE"; then
+  header "Update mode enabled"
+  mw_update_mode
+  echo -e "${GREEN}[MediaWiki] Update-only mode complete; exiting without installer.${NC}"
+  exit 0
+fi
+
 header "Installing Composer dependencies"
 cd "$WWW_DIR"
 if [[ -f composer.json ]] && command -v composer >/dev/null 2>&1; then
@@ -547,6 +629,8 @@ if [[ -f composer.json ]] && command -v composer >/dev/null 2>&1; then
 else
   echo -e "${YELLOW}[MediaWiki] composer.json not found or composer CLI not available; skipping Composer install${NC}"
 fi
+
+mw_install_extension_composer_dependencies
 
 header "Running MediaWiki CLI installer (${DB_HOST}:${DB_PORT}/${DB_NAME})"
 
