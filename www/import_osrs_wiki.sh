@@ -23,7 +23,7 @@ set -euo pipefail
 # - Running it will perform edits on your local wiki as the user you supply.
 
 SOURCE_API="https://oldschool.runescape.wiki/w/api.php"
-LOCAL_API="${LOCAL_API:-http://127.0.0.1/w/api.php}"
+LOCAL_API="${LOCAL_API:-https://wiki.fluxious-rsps.com/api.php}"
 LOCAL_USER="${LOCAL_USER:-}"
 LOCAL_PASS="${LOCAL_PASS:-}"
 FORCE=0
