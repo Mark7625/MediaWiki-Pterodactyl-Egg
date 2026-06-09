@@ -63,6 +63,8 @@ RUN apt-get update && apt-get install -y \
         exit 1; \
     } \
     && apt-get install -y --no-install-recommends \
+        imagemagick \
+        ghostscript \
         mariadb-server \
         mariadb-client \
         php${PHP_VERSION} \
